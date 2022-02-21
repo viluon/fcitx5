@@ -67,6 +67,18 @@ private:
     HandlerTable<QuickPhraseProviderCallback> callback_;
 };
 
+class CalcQuickPhraseProvider : public QuickPhraseProvider {
+public:
+    bool populate(InputContext *ic, const std::string &userInput,
+                  const QuickPhraseAddCandidateCallback &addCandidate) override;
+};
+
+class PandocQuickPhraseProvider : public QuickPhraseProvider {
+public:
+    bool populate(InputContext *ic, const std::string &userInput,
+                  const QuickPhraseAddCandidateCallback &addCandidate) override;
+};
+
 } // namespace fcitx
 
 #endif // _FCITX5_MODULES_QUICKPHRASE_QUICKPHRASEPROVIDER_H_

@@ -5,6 +5,7 @@
  *
  */
 #include "quickphraseprovider.h"
+#include <fstream>
 #include <fcntl.h>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/inputmethodentry.h>
@@ -146,6 +147,155 @@ bool CallbackQuickPhraseProvider::populate(
             return false;
         }
     }
+    return true;
+}
+
+struct ArithParser {
+    const std::string &input;
+    size_t pos;
+
+    /*
+    expr -> expr [- +] term | term
+    term -> term [/ *] factor | factor
+    factor -> (expr) | number
+    */
+
+    std::optional<double> factor() {
+        if (pos >= input.size()) { return std::nullopt; }
+
+        if (input[pos] == '(') {
+            pos++;
+            auto expr = this->expr();
+            if (!expr || pos >= input.size() || input[pos] != ')') {
+                return std::nullopt;
+            }
+            pos++;
+            return expr.value();
+        }
+
+        auto start = pos;
+        bool decimal = false;
+
+        while (pos < input.size() && (isdigit(input[pos]) || (input[pos] == '.' && !decimal))) {
+            decimal |= input[pos] == '.';
+            pos++;
+        }
+
+        if (pos == start) { return std::nullopt; }
+        try {
+            return std::stod(input.substr(start, pos - start));
+        } catch(...) {
+            return std::nullopt;
+        }
+    }
+
+    std::optional<double> term() {
+        auto _pos = pos;
+        auto left = this->factor();
+        if (!left) { return std::nullopt; }
+        else if (pos >= input.size()) { return left; }
+
+        while (true) {
+            if (input[pos] == '*') {
+                pos++;
+                auto right = this->factor();
+                if (!right) { return std::nullopt; }
+                left = left.value() * right.value();
+            } else if (input[pos] == '/') {
+                pos++;
+                auto right = this->factor();
+                if (!right) { return std::nullopt; }
+                left = left.value() / right.value();
+            } else { break; }
+        }
+        return left.value();
+    }
+
+    std::optional<double> expr() {
+        auto _pos = pos;
+        auto left = term();
+        if (!left) { return std::nullopt; }
+        else if (pos >= input.size()) { return left; }
+
+        while (true) {
+            if (input[pos] == '+') {
+                pos++;
+                auto right = this->term();
+                if (!right) { return std::nullopt; }
+                left = left.value() + right.value();
+            } else if (input[pos] == '-') {
+                pos++;
+                auto right = this->term();
+                if (!right) { return std::nullopt; }
+                left = left.value() - right.value();
+            } else { break; }
+        }
+        return left.value();
+    }
+
+    std::optional<int> skipSpaces() {
+        auto start = pos;
+        while (pos < input.size() && std::isspace(input[pos])) {
+            pos++;
+        }
+        return pos - start;
+    }
+};
+
+bool CalcQuickPhraseProvider::populate(
+    InputContext *ic, const std::string &userInput,
+    const QuickPhraseAddCandidateCallback &addCandidate) {
+    // evaluate userInput as an arithmetic expression
+    auto parser = ArithParser { userInput, 0 };
+    auto expr = parser.expr();
+    if (expr.has_value()) {
+        auto n = std::to_string(expr.value());
+        addCandidate(n, n, QuickPhraseAction::NoneSelectionCommit);
+    }
+    return true;
+}
+
+bool PandocQuickPhraseProvider::populate(
+    InputContext *ic, const std::string &userInput,
+    const QuickPhraseAddCandidateCallback &addCandidate) {
+
+    if (userInput.find("pd:") != 0) { return true; }
+
+    std::string result;
+    std::string path = "/tmp/quickphrase-pandoc-";
+    path += std::to_string(getpid());
+
+    {
+        // FIXME awful workaround for C++'s lack of proper subprocess handling
+        std::string cmd = "/usr/bin/pandoc -f latex - -t plain > ";
+        cmd += path;
+
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "w"), pclose);
+        if (!pipe) {
+            std::cout << "could not execute pandoc: " << strerror(errno) << std::endl;
+            return true;
+        }
+        // userInput to stdin
+        std::cout << "passing " << userInput << std::endl;
+        fputs("$", pipe.get());
+        fputs(userInput.substr(3, userInput.length() - 1).c_str(), pipe.get());
+        fputs("$\n", pipe.get());
+        fflush(pipe.get());
+    }
+
+    // read the file at path into result
+    std::ifstream ifs(path, std::ios::in);
+    if (!ifs) {
+        std::cout << "could not open " << path << std::endl;
+        return true;
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+        result += line;
+    }
+
+    addCandidate(result, result, QuickPhraseAction::NoneSelectionCommit);
+
     return true;
 }
 

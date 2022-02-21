@@ -18,6 +18,7 @@ namespace fcitx {
 
 enum class QuickPhraseAction {
     Commit,
+    NoneSelectionCommit,
     TypeToBuffer,
     DigitSelection,
     AlphaSelection,

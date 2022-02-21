@@ -266,7 +266,8 @@ public:
             state->typed_ = true;
 
             q_->updateUI(inputContext);
-        } else if (action_ == QuickPhraseAction::Commit) {
+        } else if (action_ == QuickPhraseAction::Commit ||
+            action_ == QuickPhraseAction::NoneSelectionCommit) {
             state->reset(inputContext);
             inputContext->inputPanel().reset();
             inputContext->updatePreedit();
@@ -292,6 +293,7 @@ void QuickPhrase::setSelectionKeys(QuickPhraseAction action) {
         };
         break;
     case QuickPhraseAction::NoneSelection:
+    case QuickPhraseAction::NoneSelectionCommit:
         syms = {
             FcitxKey_None, FcitxKey_None, FcitxKey_None, FcitxKey_None,
             FcitxKey_None, FcitxKey_None, FcitxKey_None, FcitxKey_None,
@@ -334,8 +336,9 @@ void QuickPhrase::updateUI(InputContext *inputContext) {
     if (!state->buffer_.empty()) {
         auto candidateList = std::make_unique<CommonCandidateList>();
         candidateList->setPageSize(instance_->globalConfig().defaultPageSize());
-        QuickPhraseProvider *providers[] = {&callbackProvider_,
-                                            &builtinProvider_, &spellProvider_};
+        QuickPhraseProvider *providers[] = {&calcProvider_, &pandocProvider_,
+                                            &callbackProvider_, &builtinProvider_,
+                                            &spellProvider_};
         QuickPhraseAction selectionKeyAction =
             QuickPhraseAction::DigitSelection;
         std::string autoCommit;
@@ -362,7 +365,8 @@ void QuickPhrase::updateUI(InputContext *inputContext) {
                         } else {
                             if (action == QuickPhraseAction::DigitSelection ||
                                 action == QuickPhraseAction::AlphaSelection ||
-                                action == QuickPhraseAction::NoneSelection) {
+                                action == QuickPhraseAction::NoneSelection  ||
+                                action == QuickPhraseAction::NoneSelectionCommit) {
                                 selectionKeyAction = action;
                             }
                         }
